@@ -64,10 +64,23 @@ long long getMin(long long a, long long b) {
     return (a < b) ? a : b;
 }
 
+// Функция для вывода пути
+void printPath(long long* path, long long pathLength, long long pathFlow) {
+    printf("Путь: ");
+    for (long long i = 0; i < pathLength; i++) {
+        printf("%lld", path[i]);
+        if (i < pathLength - 1) {
+            printf(" -> ");
+        }
+    }
+    printf(" (поток: %lld)\n", pathFlow);
+}
+
 // ==================== АЛГОРИТМ ЭДМОНДСА-КАРПА (BFS) ====================
 
 bool karpBFS(Vector* v, long long vertexCnt, long long vectorsCnt,
-             long long start, long long end, long long* parent) {
+             long long start, long long end, long long* parent,
+             long long* pathNodes, long long* pathLength) {
     bool* visited = (bool*)calloc(vertexCnt, sizeof(bool));
     long long* queue = (long long*)malloc(vertexCnt * sizeof(long long));
 
@@ -91,6 +104,15 @@ bool karpBFS(Vector* v, long long vertexCnt, long long vectorsCnt,
         long long current = queue[queueFront++];
 
         if (current == end) {
+            // Восстанавливаем путь
+            *pathLength = 0;
+            long long node = end;
+            while (node != -1) {
+                pathNodes[(*pathLength)++] = node;
+                node = parent[node];
+            }
+            reverseArray(pathNodes, *pathLength);
+
             free(visited);
             free(queue);
             return true;
@@ -116,52 +138,78 @@ long long edmondsKarp(Vector* v, long long vertexCnt, long long vectorsCnt,
     long long iteration = 0;
 
     long long* parent = (long long*)malloc(vertexCnt * sizeof(long long));
+    long long* pathNodes = (long long*)malloc(vertexCnt * sizeof(long long));
+    long long pathLength = 0;
 
-    while (karpBFS(v, vertexCnt, vectorsCnt, start, end, parent)) {
+    printf("Найденные пути (Эдмондс-Карп):\n");
+    printf("===============================\n");
+
+    while (karpBFS(v, vertexCnt, vectorsCnt, start, end, parent, pathNodes, &pathLength)) {
         iteration++;
 
         long long pathFlow = LLONG_MAX;
 
-        for (long long vertex = end; vertex != start; vertex = parent[vertex]) {
-            long long prev = parent[vertex];
-            if (prev == -1) break;
-
-            long long edgeIdx = getEdgeIndex(v, vectorsCnt, prev, vertex);
+        // Находим минимальную пропускную способность на пути
+        for (long long i = 0; i < pathLength - 1; i++) {
+            long long u = pathNodes[i];
+            long long w = pathNodes[i + 1];
+            long long edgeIdx = getEdgeIndex(v, vectorsCnt, u, w);
             if (edgeIdx >= 0) {
                 pathFlow = getMin(pathFlow, v[edgeIdx].remainflow);
             }
         }
 
-        for (long long vertex = end; vertex != start; vertex = parent[vertex]) {
-            long long prev = parent[vertex];
-            if (prev == -1) break;
+        // Обновляем потоки на пути
+        for (long long i = 0; i < pathLength - 1; i++) {
+            long long u = pathNodes[i];
+            long long w = pathNodes[i + 1];
 
-            long long forwardIdx = getEdgeIndex(v, vectorsCnt, prev, vertex);
+            long long forwardIdx = getEdgeIndex(v, vectorsCnt, u, w);
             if (forwardIdx >= 0) {
                 v[forwardIdx].flow += pathFlow;
                 v[forwardIdx].remainflow -= pathFlow;
             }
 
-            long long reverseIdx = getEdgeIndex(v, vectorsCnt, vertex, prev);
+            long long reverseIdx = getEdgeIndex(v, vectorsCnt, w, u);
             if (reverseIdx >= 0) {
                 v[reverseIdx].remainflow += pathFlow;
             }
         }
 
+        // Выводим найденный путь
+        printf("Путь %lld: ", iteration);
+        for (long long i = 0; i < pathLength; i++) {
+            printf("%lld", pathNodes[i]);
+            if (i < pathLength - 1) {
+                printf(" -> ");
+            }
+        }
+        printf(" (добавлен поток: %lld)\n", pathFlow);
+
         maxFlow += pathFlow;
-        printf("[Karp] Итерация %lld: поток %lld\n", iteration, pathFlow);
     }
 
     free(parent);
-    printf("[Karp] Максимальный поток: %lld (за %lld итераций)\n", maxFlow, iteration);
+    free(pathNodes);
+    printf("\n[Karp] Максимальный поток: %lld (за %lld итераций)\n", maxFlow, iteration);
     return maxFlow;
 }
 
 // ==================== АЛГОРИТМ ФОРДА-ФАЛКЕРСОНА (DFS) ====================
 
 long long fordFulkersonDFS(Vector* v, bool* visited, long long current,
-                          long long end, long long vectorsCnt, long long minCapacity) {
+                          long long end, long long vectorsCnt, long long minCapacity,
+                          long long* path, long long pathIndex, long long** allPaths,
+                          long long* pathCount) {
+    path[pathIndex] = current;
+
     if (current == end) {
+        // Сохраняем найденный путь
+        allPaths[*pathCount] = (long long*)malloc((pathIndex + 1) * sizeof(long long));
+        for (long long i = 0; i <= pathIndex; i++) {
+            allPaths[*pathCount][i] = path[i];
+        }
+        (*pathCount)++;
         return minCapacity;
     }
 
@@ -171,7 +219,9 @@ long long fordFulkersonDFS(Vector* v, bool* visited, long long current,
         if (v[i].a == current && !visited[v[i].b] && v[i].remainflow > 0) {
             long long newMinCapacity = getMin(minCapacity, v[i].remainflow);
             long long delta = fordFulkersonDFS(v, visited, v[i].b, end,
-                                               vectorsCnt, newMinCapacity);
+                                               vectorsCnt, newMinCapacity,
+                                               path, pathIndex + 1,
+                                               allPaths, pathCount);
 
             if (delta > 0) {
                 v[i].flow += delta;
@@ -195,23 +245,57 @@ long long fordFulkerson(Vector* v, long long vertexCnt, long long vectorsCnt,
     long long maxFlow = 0;
     long long iteration = 0;
 
+    // Массивы для хранения путей
+    long long** allPaths = (long long**)malloc(1000 * sizeof(long long*));
+    long long pathCount = 0;
+    long long* currentPath = (long long*)malloc(vertexCnt * sizeof(long long));
+
+    printf("Найденные пути (Форд-Фалкерсон):\n");
+    printf("================================\n");
+
     while (1) {
         iteration++;
+        pathCount = 0; // Сбрасываем счетчик путей для каждой итерации
 
         bool* visited = (bool*)calloc(vertexCnt, sizeof(bool));
         long long delta = fordFulkersonDFS(v, visited, start, end,
-                                          vectorsCnt, LLONG_MAX);
+                                          vectorsCnt, LLONG_MAX,
+                                          currentPath, 0,
+                                          allPaths, &pathCount);
         free(visited);
 
         if (delta == 0) {
             break;
         }
 
+        // Выводим все пути, найденные в этой итерации
+        for (long long i = 0; i < pathCount; i++) {
+            // Находим длину пути
+            long long pathLen = 0;
+            while (pathLen < vertexCnt && allPaths[i][pathLen] != end) {
+                pathLen++;
+            }
+            pathLen++; // Добавляем конечную вершину
+
+            printf("Путь %lld (итерация %lld): ", i + 1, iteration);
+            for (long long j = 0; j < pathLen; j++) {
+                printf("%lld", allPaths[i][j]);
+                if (j < pathLen - 1) {
+                    printf(" -> ");
+                }
+            }
+            printf(" (добавлен поток: %lld)\n", delta);
+
+            free(allPaths[i]); // Освобождаем память
+        }
+
         maxFlow += delta;
-        printf("[Falkerson] Итерация %lld: поток %lld\n", iteration, delta);
     }
 
-    printf("[Falkerson] Максимальный поток: %lld (за %lld итераций)\n", maxFlow, iteration);
+    free(allPaths);
+    free(currentPath);
+
+    printf("\n[Falkerson] Максимальный поток: %lld (за %lld итераций)\n", maxFlow, iteration);
     return maxFlow;
 }
 

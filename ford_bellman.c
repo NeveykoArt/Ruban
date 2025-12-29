@@ -46,7 +46,7 @@ int* get_path(int* prev, int t, int* path_length) {
 }
 
 void init_graph(int* peaks, int* edges, int* start_peak, Edge** graph) {
-    *start_peak = 0;
+    *start_peak = 4;
     *peaks = 5;
     *edges = 7;
 
