@@ -12,4 +12,4 @@
 
 Дополнительно:
 
-&nbsp;&nbsp;&nbsp;&nbsp;training (5 задач из тренировки на CodeForce)
+&nbsp;&nbsp;&nbsp;training (5 задач из тренировки на CodeForce)
